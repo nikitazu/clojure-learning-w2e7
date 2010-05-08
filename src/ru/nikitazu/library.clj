@@ -9,8 +9,13 @@
 (defstruct loan-data :owner :posessor :return-by)
 
 (def *libraries* (ref {}))
+
 (def *me* "Nikita B. Zuev")
 
+(defmacro with-login [name & actions]
+  "Execute actions while authorised as name."
+  `(binding [*me* ~name]
+     ~@actions))
 
 (defn is-me? [name]
   (= name *me*))
@@ -51,24 +56,33 @@
 
 
 (defn add-book [lib book]
+  "Add book to a library."
   (conj lib book))
 
 (defn remove-book [lib book]
+  "Remove book from a library."
   (disj lib book))
 
 
 (defmacro lib-alter! [alter-fn & args]
+  "Change libraries, updating their contence.
+
+   Macro applies alter-fn function to a collection of libraries
+   supplying args as additional arguments."
   `(dosync
      (alter *libraries* ~alter-fn ~@args)
      nil))
 
+
 (defn lib-update-key! [key func]
+  "Change a single library.
+
+   Applies func function to a library, using the `key` to access it."
   (lib-alter! update-in [key] func))
 
 
 (defn add-book!
   "Add book to a library.
-    
     key  : A key to access the library.
     book : A new book, that will be added."
   ([book]
@@ -80,7 +94,6 @@
 
 (defn remove-book!
   "Remove a book from a library.
-    
     key  : A key to access the library.
     book : A new book, that will be added."
   ([book]
@@ -146,19 +159,21 @@
     (lib-alter! add-library key books)))
 
 
+(defn burn-library [libs key]
+  (dissoc libs key))
+
 (defn burn-library! [key]
   "Destroy a library that is not needed anymore."
-  (dosync
-    (alter *libraries* dissoc key))
-  nil)
+  (lib-alter! burn-library key))
 
-
-(defmacro with-login [name & actions]
-  `(binding [*me* ~name]
-     ~@actions))
 
 
 (defn check-owner [book message]
+  "Check if the user is owner of a book or not.
+    book    : A book, that is checked for ownership.
+    message : A message, that will be part of a thrown exception.
+
+   In case user doesn't own a book, the exception is thrown."
   (let [owner (-> book :loan-data :owner)]
     (when (not (is-me? owner))
       (throw
@@ -168,46 +183,59 @@
 ;; todo give-to
 ;; to give book you should be the owner and the posessor
 
+;; todo return-by date should not be now but a defined value
+
 (defnk loan-to [person book :return-by (Date.)]
+  "Loan a book to some person for some time.
+    person    : The one who will be the posessor of a book.
+    book      : A book, that will be given to a person.
+    return-by : A date by wich a person must give the book back to you.
+
+   If you are not the owner, an exception will be thrown.
+   Successful execution sets book loan-data."
   (check-owner book "It is impolite to loan somebody else's book.")
   (assoc book :loan-data (struct loan-data *me* person return-by)))
 
+
 (defn accept-return [book]
+  "Accept that a book was returned to you.
+    book      : A book, that will be given to a person.
+
+   If you are not the owner, an exception will be thrown.
+   Successful execution clears book loan-data."
   (check-owner book "You can't accept it.")
   (assoc book :loan-data (struct loan-data *me* *me* nil)))
 
 
-(defn print-book
-  "Prints out information about a book."
-  [ { :keys [title authors] } ]
-  (println "Title:" title)
-  (let [[fst snd & more] authors]
-    (println "  Author: " (comma-sep
-                            (filter seq
-                              [fst snd (when more "et. al")])))))
+(defnk loan-to! [key person book :return-by (Date.)]
+  (lib-update-key! key (fn [lib]
+                          (let [loaned (loan-to person 
+                                                book
+                                                :return-by return-by)
+                                without (remove-book lib book)]
+                            (add-book without loaned)))))
 
-(defn print-books [& books]
-  (doseq [b books]
-    (print-book b))
-  (print   "\n=============\n")
-  (println "Printed information on " (count books) " books."))
 
-(defn- book->string
-  [ { :keys [title authors price] :as book } ]
-  (let [[fst snd & more] authors
+(defn book->string
+  [ { :keys [title authors loan-data] :as book } ]
+  (let [{ :keys [owner posessor return-by] } loan-data
+        [fst snd & more] authors
         short-authors (comma-sep (filter seq
                                    [fst snd (when more "et. al.")]))]
-    (str "Title:" title "\n"
-         "\tAuthor:" short-authors "\n"
-         "\tRaw:" (pr-str book))))
+    (str "Title       : " title "\n"
+         "  Author    : " short-authors "\n"
+         "  Owner     : " owner "\n"
+         "  Posessor  : " posessor "\n"
+         "  Return by : " return-by "\n"
+         "  Raw       : " (pr-str book))))
 
-(defn- books->string [& books]
+(defn books->string [& books]
   (let [book-strings (map book->string books)]
     (str (apply str (new-line-sep book-strings))
          "\n==========\n"
          "Printed information on " (count books) " books.")))
 
-(defn print-books-new [& books]
+(defn print-books [& books]
   (let [str (apply books->string books)]
     (println str)))
 
@@ -276,10 +304,14 @@
             "The Kind Diet"
             :authors ["Alicia Silverstone","Neal D. Barnard M.D."]))
 
-  (let [boring-book (new-book "Boring book")]
+  (let [boring-book (new-book "Boring book")
+        interesting-book (new-book "Interesting book" :authors ["Unknown U.K."])]
     (add-book! boring-book)
+    (add-book! interesting-book)
+    (loan-to! :default "Daniil Kabluchkov" interesting-book)
     (remove-book! boring-book))
 
   (doseq [k (lib-keys)]
-    (apply print-books-new
-           (lib-books k))))
+    (println "\nContence of library" k)
+    (println "==========")
+    (apply print-books (lib-books k))))
