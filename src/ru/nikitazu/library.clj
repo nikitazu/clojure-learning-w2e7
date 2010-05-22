@@ -5,8 +5,8 @@
   (:use ru.nikitazu.utils)
   (:use clojure.contrib.def))
 
-(defstruct book :title :authors :loan-data)
-(defstruct loan-data :owner :posessor :return-by)
+(defstruct book :title :authors :owner :loan-data)
+(defstruct loan-data :posessor :return-by)
 
 (def *libraries* (ref {}))
 
@@ -50,9 +50,9 @@
    :posessor    *me*
    :return-by   nil]
   (struct book
-    title authors
+    title authors owner
     (struct loan-data
-      owner posessor return-by)))
+      posessor return-by)))
 
 
 (defn add-book [lib book]
@@ -174,8 +174,8 @@
     message : A message, that will be part of a thrown exception.
 
    In case user doesn't own a book, the exception is thrown."
-  (let [owner (-> book :loan-data :owner)]
-    (when (not (is-me? owner))
+  (let [owner (book :owner)]
+    (when-not (is-me? owner)
       (throw
         (Exception. 
           (str "This book belongs to " owner ". " message))))))
@@ -194,7 +194,7 @@
    If you are not the owner, an exception will be thrown.
    Successful execution sets book loan-data."
   (check-owner book "It is impolite to loan somebody else's book.")
-  (assoc book :loan-data (struct loan-data *me* person return-by)))
+  (assoc book :loan-data (struct loan-data person return-by)))
 
 
 (defn accept-return [book]
@@ -204,21 +204,21 @@
    If you are not the owner, an exception will be thrown.
    Successful execution clears book loan-data."
   (check-owner book "You can't accept it.")
-  (assoc book :loan-data (struct loan-data *me* *me* nil)))
+  (assoc book :loan-data (struct loan-data *me* nil)))
 
 
 (defnk loan-to! [key person book :return-by (Date.)]
-  (lib-update-key! key (fn [lib]
-                          (let [loaned (loan-to person 
-                                                book
-                                                :return-by return-by)
-                                without (remove-book lib book)]
-                            (add-book without loaned)))))
+  (lib-update-key! 
+    key
+    (fn [lib]
+      (let [loaned (loan-to person book :return-by return-by)
+            without (remove-book lib book)]
+        (add-book without loaned)))))
 
 
 (defn book->string
-  [ { :keys [title authors loan-data] :as book } ]
-  (let [{ :keys [owner posessor return-by] } loan-data
+  [ { :keys [title authors loan-data owner] :as book } ]
+  (let [{ :keys [posessor return-by] } loan-data
         [fst snd & more] authors
         short-authors (comma-sep (filter seq
                                    [fst snd (when more "et. al.")]))]
