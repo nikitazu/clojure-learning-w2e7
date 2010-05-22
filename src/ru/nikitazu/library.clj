@@ -245,14 +245,28 @@
 ;;; ========
 
 (defn filter-books [key pred]
+  "Filter books in a library by predicate.
+    key  : library key
+    pred : predicate for a filter"
   (filter pred (lib-books key)))
 
+
 (defn has-author? [book search-author]
+  "Determine whether book has an specified author."
   (let [authors (:authors book)
         right-author? (fn [author]
                         (= author search-author))]
     (some right-author?
           authors)))
+
+
+(defn has-many-authors? [book]
+  "Determine whether book has many authors."
+  (> (count (:authors book)) 1))
+
+
+;;; Querying usage: combine predicates with filter
+;;; ==============================================
 
 (defn books-by-author
   ([author]
@@ -261,16 +275,13 @@
   ([key author]
     (filter-books key #(has-author? % author))))
 
-(defn has-many-authors? [book]
-  (> (count (:authors book))
-     1))
 
 (defn books-with-many-authors
   ([]
     (books-with-many-authors :default))
   
   ([key]
-    (filter-books key #(has-many-authors? %))))
+    (filter-books key has-many-authors?)))
 
 
 ;;; Some funcs for main
