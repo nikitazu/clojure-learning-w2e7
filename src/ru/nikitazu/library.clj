@@ -3,7 +3,8 @@
 (ns ru.nikitazu.library
   (:import java.util.Date)
   (:use ru.nikitazu.utils)
-  (:use clojure.contrib.def))
+  (:use clojure.contrib.def)
+  (:gen-class))
 
 (defstruct book :title :authors :owner :loan-data)
 (defstruct loan-data :posessor :return-by)
@@ -240,78 +241,117 @@
     (println str)))
 
 
-(defn -main []
-  (make-library!
-    :default
-    (new-book "Peter Pan"
-              :authors ["J. M. Barrie"])
+;;; Querying
+;;; ========
 
-    (new-book "The Adventures of Tom Sawyer"
-              :authors ["Mark Twain "])
+(defn filter-books [key pred]
+  (filter pred (lib-books key)))
 
-    (new-book "The Two Captains"
-              :authors ["Veniamin Kaverin"]))
+(defn has-author? [book search-author]
+  (let [authors (:authors book)
+        right-author? (fn [author]
+                        (= author search-author))]
+    (some right-author?
+          authors)))
 
-  (make-library!
-    :programming
-    (new-book
-            "Structure and Interpretation of Computer Programs"
-            :authors ["Harold Abelson"
-                      "Gerald Jay Sussman"
-                      "Julie Sussman"])
+(defn books-by-author
+  ([author]
+    (books-by-author :default author))
+  
+  ([key author]
+    (filter-books key #(has-author? % author))))
 
-    (new-book
-            "Programming Clojure"
-            :authors ["Stuart Halloway"])
+(defn has-many-authors? [book]
+  (> (count (:authors book))
+     1))
 
-    (new-book
-            "Modern Compiler Implementation in ML"
-            :authors ["Andrew W. Appel"]))
+(defn books-with-many-authors
+  ([]
+    (books-with-many-authors :default))
+  
+  ([key]
+    (filter-books key #(has-many-authors? %))))
 
-  (make-library!
-    :best-sellers
-    (new-book
-            "The Big Short"
-            :authors ["Michael Lewis"])
-    (new-book
-            "The Help"
-            :authors ["Kathryn Stockett"])
-    (new-book
-            "Change Your Prain, Change Your Body"
-            :authors ["Daniel G. Amen M.D."])
-    (new-book
-           "Food Rules"
-            :authors ["Michael Pollan"])
-    (new-book
-            "Courage and Consequence"
-            :authors ["Karl Rove"])
-    (new-book
-            "A Patriot's History of the United States"
-            :authors ["Larry Schweikart","Michael Allen"])
-    (new-book
-            "The 48 Laws of Power"
-            :authors ["Robert Greene"])
-    (new-book
-            "The Five Thousand Year Leap"
-            :authors ["W. Cleon Skousen",
-                      "James Michael Pratt",
-                      "Carlos L Packard",
-                      "Evan Frederickson"])
-    (new-book
-            "Chelsea Chelsea Bang Bang"
-            :authors ["Chelsea Handler"])
-    (new-book
-            "The Kind Diet"
-            :authors ["Alicia Silverstone","Neal D. Barnard M.D."]))
 
+;;; Some funcs for main
+;;; ===================
+
+(defn print-all-books []
+  (doseq [k (lib-keys)]
+    (println "\nContence of library" k)
+    (println "==========")
+    (apply print-books (lib-books k))))
+
+
+(defn make-default-library! []
+  (make-library! :default
+    (new-book "Peter Pan"                    :authors ["J. M. Barrie"])
+    (new-book "The Adventures of Tom Sawyer" :authors ["Mark Twain "])
+    (new-book "The Two Captains"             :authors ["Veniamin Kaverin"])))
+
+
+(defn make-programming-library! []
+  (make-library! :programming
+    (new-book "Structure and Interpretation of Computer Programs"
+              :authors ["Harold Abelson"
+                        "Gerald Jay Sussman"
+                        "Julie Sussman"])
+
+    (new-book "Programming Clojure"
+              :authors ["Stuart Halloway"])
+
+    (new-book "Modern Compiler Implementation in ML"
+              :authors ["Andrew W. Appel"])))
+
+
+(defn make-best-sellers-library! []
+  (make-library! :best-sellers
+    (new-book "The Big Short" :authors ["Michael Lewis"])
+    (new-book "The Help"      :authors ["Kathryn Stockett"])
+    (new-book "Food Rules"    :authors ["Michael Pollan"])
+
+    (new-book "Chelsea Chelsea Bang Bang" :authors ["Chelsea Handler"])
+    (new-book "Courage and Consequence"   :authors ["Karl Rove"])
+    (new-book "The 48 Laws of Power"      :authors ["Robert Greene"])
+
+    (new-book "Change Your Prain, Change Your Body"
+               :authors ["Daniel G. Amen M.D."])
+
+    (new-book "A Patriot's History of the United States"
+              :authors ["Larry Schweikart","Michael Allen"])
+
+    (new-book "The Five Thousand Year Leap"
+              :authors ["W. Cleon Skousen",
+                        "James Michael Pratt",
+                        "Carlos L Packard",
+                        "Evan Frederickson"])
+
+    (new-book "The Kind Diet"
+              :authors ["Alicia Silverstone","Neal D. Barnard M.D."])))
+
+
+(defn add-some-books! []
   (let [boring-book (new-book "Boring book")
         interesting-book (new-book "Interesting book" :authors ["Unknown U.K."])]
     (add-book! boring-book)
     (add-book! interesting-book)
     (loan-to! :default "Daniil Kabluchkov" interesting-book)
-    (remove-book! boring-book))
+    (remove-book! boring-book)))
 
-  (doseq [k (lib-keys)]
-    (println "\nContence of library" k)
-    (println "==========")
-    (apply print-books (lib-books k))))
+
+(defn -main []
+  (make-default-library!)
+  (make-programming-library!)
+  (make-best-sellers-library!)
+  (add-some-books!)
+
+  (print-all-books)
+
+  (println "\nProgramming books by Stuart Halloway:")
+  (apply print-books
+         (books-by-author :programming
+                          "Stuart Halloway"))
+
+  (println "\nMultiauthored best sellers:"
+           (count (books-with-many-authors :best-sellers))))
+
