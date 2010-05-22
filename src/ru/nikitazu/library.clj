@@ -1,7 +1,6 @@
 ;; A personal book library management appication
 
 (ns ru.nikitazu.library
-  (:import java.util.Date)
   (:use ru.nikitazu.utils)
   (:use clojure.contrib.def)
   (:gen-class))
@@ -184,9 +183,7 @@
 ;; todo give-to
 ;; to give book you should be the owner and the posessor
 
-;; todo return-by date should not be now but a defined value
-
-(defnk loan-to [person book :return-by (Date.)]
+(defn loan-to [person book return-by]
   "Loan a book to some person for some time.
     person    : The one who will be the posessor of a book.
     book      : A book, that will be given to a person.
@@ -208,11 +205,11 @@
   (assoc book :loan-data (struct loan-data *me* nil)))
 
 
-(defnk loan-to! [key person book :return-by (Date.)]
+(defnk loan-to! [key person book :return-by nil]
   (lib-update-key! 
     key
     (fn [lib]
-      (let [loaned (loan-to person book :return-by return-by)
+      (let [loaned (loan-to person book return-by)
             without (remove-book lib book)]
         (add-book without loaned)))))
 
@@ -227,7 +224,7 @@
          "  Author    : " short-authors "\n"
          "  Owner     : " owner "\n"
          "  Posessor  : " posessor "\n"
-         "  Return by : " return-by "\n"
+         "  Return by : " (date->string return-by) "\n"
          "  Raw       : " (pr-str book))))
 
 (defn books->string [& books]
@@ -251,19 +248,25 @@
   (filter pred (lib-books key)))
 
 
-(defn has-author? [book search-author]
+(defn has-author? [book author]
   "Determine whether book has an specified author."
-  (let [authors (:authors book)
-        right-author? (fn [author]
-                        (= author search-author))]
-    (some right-author?
-          authors)))
+    (some #{author} (:authors book)))
 
 
 (defn has-many-authors? [book]
   "Determine whether book has many authors."
   (> (count (:authors book)) 1))
 
+
+(defn loaned? [book]
+  (let [posessor (->> book :loan-data :posessor)]
+    (not (is-me? posessor))))
+
+
+(defn loan-expired? [book]
+  "Determine whether book is loanded and should already be returned but not."
+  (and (loaned? book)
+       (date< (->> book :loan-data :return-by))))
 
 ;;; Querying usage: combine predicates with filter
 ;;; ==============================================
@@ -282,6 +285,14 @@
   
   ([key]
     (filter-books key has-many-authors?)))
+
+
+(defn books-loan-expired
+  ([]
+    (books-loan-expired :default))
+
+  ([key]
+    (filter-books key loan-expired?)))
 
 
 ;;; Some funcs for main
@@ -326,19 +337,7 @@
     (new-book "The 48 Laws of Power"      :authors ["Robert Greene"])
 
     (new-book "Change Your Prain, Change Your Body"
-               :authors ["Daniel G. Amen M.D."])
-
-    (new-book "A Patriot's History of the United States"
-              :authors ["Larry Schweikart","Michael Allen"])
-
-    (new-book "The Five Thousand Year Leap"
-              :authors ["W. Cleon Skousen",
-                        "James Michael Pratt",
-                        "Carlos L Packard",
-                        "Evan Frederickson"])
-
-    (new-book "The Kind Diet"
-              :authors ["Alicia Silverstone","Neal D. Barnard M.D."])))
+               :authors ["Daniel G. Amen M.D."])))
 
 
 (defn add-some-books! []
@@ -346,8 +345,47 @@
         interesting-book (new-book "Interesting book" :authors ["Unknown U.K."])]
     (add-book! boring-book)
     (add-book! interesting-book)
-    (loan-to! :default "Daniil Kabluchkov" interesting-book)
+    (loan-to! :default
+              "Daniil Kabluchkov"
+              interesting-book
+              :return-by (date 2010 10 10))
     (remove-book! boring-book)))
+
+
+(defn make-3-best-sellers-loan-expired! []
+  (let [bs1 (new-book "A Patriot's History of the United States"
+              :authors ["Larry Schweikart","Michael Allen"])
+
+        bs2 (new-book "The Five Thousand Year Leap"
+              :authors ["W. Cleon Skousen",
+                        "James Michael Pratt",
+                        "Carlos L Packard",
+                        "Evan Frederickson"])
+
+        bs3 (new-book "The Kind Diet"
+              :authors ["Alicia Silverstone","Neal D. Barnard M.D."])
+
+        friend "Daniil Kabluchkov"
+        expiration-date (date 2008 10 10)]
+    
+    (doseq [book [bs1 bs2 bs3]]
+      (add-book! :best-sellers book)
+      (loan-to! :best-sellers friend book :return-by expiration-date))))
+
+
+(comment defn unreliable-guys [key]
+  (let [expired (books-loan-expired key)
+        guys    (->> book :loan-data :posessor)]))
+
+(defn unreliable-guys2 [key]
+  (loop [books (books-loan-expired key)
+         stats {}]
+    (let [head (first books)
+          guy (->> head :loan-data :posessor)
+          stats (assoc stats guy (inc-nil (get stats guy)))]
+      (if-let [books (next books)]
+        (recur books stats)
+        stats))))
 
 
 (defn -main []
@@ -355,6 +393,11 @@
   (make-programming-library!)
   (make-best-sellers-library!)
   (add-some-books!)
+  (make-3-best-sellers-loan-expired!)
+
+  (println "\nUnreliable guys:")
+  (doseq [[guy books] (unreliable-guys2 :best-sellers)]
+    (println "  " guy ":" books " books."))
 
   (print-all-books)
 
